@@ -1,0 +1,9 @@
+{
+  "identifier": "io.github.prasanth-nature.markdown-latex",
+  "name": "Markdown + LaTeX",
+  "description": "Markdown editor with live KaTeX math preview. Edit, split and preview modes.",
+  "content_type": "SN|Component",
+  "area": "editor-editor",
+  "version": "1.0.0",
+  "url": "https://prasanth-nature.github.io/sn-markdown-latex/"
+}
