@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>mock SN host</title>
+<style>html,body{margin:0;height:100%}iframe{width:100%;height:100vh;border:0;display:block}</style></head>
+<body>
+<script>
+/* Faithful mock of Standard Notes' ComponentViewer + IframeFeatureView (app repo @ 2026-11-12). */
+window.SN_LOG = [];      // every message received from the plugin
+window.SN_SAVED = [];    // items passed to save-items
+window.SN_ERRORS = [];
+let ctxMsg = null, frame = null, env = 'web', sessionKey = 'sess-' + Math.random().toString(36).slice(2);
+
+function mobile() { return env === 'mobile'; }
+function send(msg) { frame.contentWindow.postMessage(mobile() ? JSON.stringify(msg) : msg, '*'); }
+function reply(original, data) { send({ action: 'reply', original, data }); }
+
+window.NOTE = null;
+function noteJson(content, extra) {
+  const now = new Date().toISOString();
+  return Object.assign({
+    uuid: 'note-1', content_type: 'Note', created_at: now, updated_at: now,
+    isMetadataUpdate: false, content, clientData: {}
+  }, extra || {});
+}
+
+window.addEventListener('message', (e) => {
+  if (!frame || e.source !== frame.contentWindow) return;
+  let m = e.data;
+  if (typeof m === 'string') { try { m = JSON.parse(m); } catch { return; } }
+  SN_LOG.push({ action: m.action, hasSession: m.sessionKey === sessionKey, api: m.api });
+  if (m.sessionKey !== sessionKey && m.action !== 'component-registered') { SN_ERRORS.push('bad sessionKey on ' + m.action); return; }
+  if (m.action === 'stream-context-item') { ctxMsg = m; reply(m, { item: NOTE }); }
+  else if (m.action === 'save-items') {
+    const items = (m.data && m.data.items) || [];
+    items.forEach(i => SN_SAVED.push(i));
+    if (items[0] && items[0].content && NOTE && items[0].uuid === NOTE.uuid) NOTE.content = items[0].content;
+    reply(m, { saved: true });
+  }
+  else if (m.action === 'set-component-data') { SN_LOG[SN_LOG.length - 1].data = m.data; }
+});
+
+/* content = note content object; opts = {src, sandbox, environment, themes} */
+window.startSN = function (content, opts) {
+  opts = opts || {};
+  env = opts.environment || 'web';
+  NOTE = noteJson(content);
+  frame = document.createElement('iframe');
+  frame.id = 'f';
+  frame.setAttribute('sandbox', opts.sandbox !== undefined ? opts.sandbox :
+    'allow-scripts allow-top-navigation-by-user-activation allow-popups allow-modals allow-forms allow-downloads');
+  frame.src = opts.src;
+  frame.addEventListener('load', () => {
+    const register = () => send({
+      action: 'component-registered', sessionKey, componentData: opts.componentData || {},
+      data: { uuid: 'comp-1', environment: env, platform: 'linux-web', activeThemeUrls: opts.themes || [] }
+    });
+    if (opts.registerDelay) setTimeout(register, opts.registerDelay); else register();
+  });
+  document.body.appendChild(frame);
+};
+
+/* Push a new set of active theme URLs (what SN does when the user switches theme) */
+window.setThemes = function (urls) { send({ action: 'themes', data: { themes: urls } }); };
+
+/* An iframe that never gets a handshake: simulates opening the page outside Standard Notes */
+window.startBare = function (src) {
+  frame = document.createElement('iframe');
+  frame.id = 'f';
+  frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-modals allow-forms');
+  frame.src = src;
+  document.body.appendChild(frame);
+};
+
+/* Simulate the user switching notes / sync pushing a new version into the open editor */
+window.pushNote = function (content, extra) {
+  NOTE = noteJson(content, extra);
+  reply(ctxMsg, { item: NOTE });
+};
+</script>
+</body></html>
